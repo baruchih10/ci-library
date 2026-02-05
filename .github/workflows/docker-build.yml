@@ -1,0 +1,67 @@
+name: "CI Library: Docker Build + Push to GHCR"
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: "Used only as part of the tag string"
+        required: true
+        type: string
+      docker_context:
+        description: "Docker build context path"
+        required: true
+        type: string
+    outputs:
+      image_tag:
+        description: "Returned tag (caller can deploy using it)"
+        value: ${{ jobs.build.outputs.image_tag }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: Compute tag
+        run: |
+          # Stable tag format:
+          # GITHUB_SHA is the full 40-char commit hash
+          # We shorten it to 7 chars (common Git convention)
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          TAG="sha-${SHORT_SHA}"
+
+          # Expose as step output
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # Log for visibility in Actions UI
+          echo "Computed TAG=$TAG"
+
+          # Alternative tag formats:
+          
+          # - run number is easy to track
+          # TAG="run-${GITHUB_RUN_NUMBER}"
+          # echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + Push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.docker_context }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ inputs.image_name }}-${{ steps.meta.outputs.tag }}
